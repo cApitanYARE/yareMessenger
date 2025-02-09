@@ -1,0 +1,60 @@
+# Ігнорування файлів, створених під час компіляції
+*.o
+*.obj
+*.lo
+*.la
+*.al
+*.libs
+*.so
+*.so.*
+*.dll
+*.dylib
+*.a
+*.lib
+*.exe
+*.out
+*.app
+*.pdb
+
+# Ігнорування Qt-пов’язаних файлів
+*.qrc.depends
+*.qrc
+*.moc
+*.moc.cpp
+*.moc.*.cpp
+*.moc.*.obj
+*.moc.*.o
+ui_*.h
+qrc_*.cpp
+
+# Ігнорування CMake/Makefile
+Makefile
+CMakeLists.txt.user
+CMakeFiles/
+cmake_install.cmake
+*.cmake
+
+# Ігнорування Qt Creator
+*.pro.user
+*.pro.user.*
+*.pro.*.user
+*.qbs.user
+*.qmlproject.user
+*.qtc_clangd.*
+
+# Ігнорування директорій побудови
+build-*/
+build/
+debug/
+release/
+
+# Логи та тимчасові файли
+*.log
+*.tmp
+*.cache
+*.bak
+
+# Системні файли
+.DS_Store  # MacOS
+Thumbs.db  # Windows
+desktop.ini  # Windows
