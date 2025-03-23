@@ -2,13 +2,14 @@
 #include "login.h"
 #include "ui_signin.h"
 
-SignIn::SignIn(QWidget *parent)
-    : QWidget(parent)
-    , ui(new Ui::SignIn)
+SignIn::SignIn(QWidget *parent, boost::asio::io_context& context)
+    : QWidget(parent),
+    socket(std::make_shared<boost::asio::ip::tcp::socket>(context)),
+    timer(context),
+    io(context),
+    ui(new Ui::SignIn)
 {
     ui->setupUi(this);
-
-
 
     this->setStyleSheet("background-color:#dcdcdc;");
     this->setFixedSize(300,345);
@@ -88,7 +89,7 @@ SignIn::SignIn(QWidget *parent)
 
     enter_signIn = new QLineEdit();
     enter_signIn->setObjectName("EnterLine");
-    enter_signIn->setPlaceholderText("enter name");
+    enter_signIn->setPlaceholderText("enter name, first write @");
 
     password = new QLabel("Password");
     password->setObjectName("Title");
@@ -135,18 +136,40 @@ SignIn::SignIn(QWidget *parent)
     connect(closeWindow, &QPushButton::clicked, this, [this] {
         this->close();
     });
-    connect(changeField, &QPushButton::clicked, this, [this] {
+    connect(changeField, &QPushButton::clicked, this, [this,&context] {
         this->close();
-        LogIn *logInWindow = new LogIn();
+        LogIn *logInWindow = new LogIn(context);
         logInWindow->setWindowFlag(Qt::FramelessWindowHint);
         logInWindow->show();
     });
 
-    socket = new QTcpSocket(this);
-    connect(socket, &QTcpSocket::readyRead, this, &SignIn::onServerResponse);
+    timer.expires_after(boost::asio::chrono::seconds(3));
+    timer.async_wait([this](const boost::system::error_code& ec) {
+        if (!ec) {
+            if(!socket->is_open()){
+            qDebug() << "Connection timed out!";
+            }
+            socket->close();
+        }
+    });
+    socket->async_connect(boost::asio::ip::tcp::endpoint(boost::asio::ip::make_address("127.0.0.1"), 12345),[this](const boost::system::error_code& ec){
+        if (!ec) {
+            qDebug() << "Connected to server!\n";
+            timer.cancel();
+            ServerResponse();
+        } else {
+            qDebug() << "Connection failed: " << ec.message() << "\n";
+        }
+    });
+
 
     connect(sendData, &QPushButton::clicked, this, [this] {
-        QString username = '@' + enter_signIn->text();
+        QString username = enter_signIn->text();
+        if(!username.contains('@')){
+             playSystemSound("Speech Misrecognition.wav");
+            info->setText("User Name mast contains '@'");
+            return;
+        }
         QString password = enter_pass->text();
         QString confirmPassword = confirm_pass->text();
 
@@ -167,13 +190,24 @@ SignIn::SignIn(QWidget *parent)
         json["action"] = "register";
         json["username"] = username;
         json["password"] = QString(hashedPassword);
-
         QJsonDocument doc(json);
-        socket->connectToHost("127.0.0.1", 12345);
-        if (socket->waitForConnected(1000)) {
-            socket->write(doc.toJson());
-        } else {
-            QMessageBox::critical(this, "Error", "Cannot connect to server!");
+        jsonData = doc.toJson(QJsonDocument::Compact).toStdString();
+
+        if (socket->is_open()) {
+            boost::asio::async_write(
+                *socket,
+                boost::asio::buffer(jsonData),
+                [&](const boost::system::error_code& ec, std::size_t bytes_transferred){
+                    if (!ec) {
+                        qDebug() << "Sent " << bytes_transferred << " bytes to server\n";
+                        qDebug() << "Request sent successfully.";
+                    } else {
+                        qDebug() << "Write error: " << ec.message() << '\n';
+                        socket->close();
+                    }
+             });
+        }else{
+            qDebug() << "Socket is not open. Cannot send data.";
         }
     });
 
@@ -194,42 +228,84 @@ SignIn::SignIn(QWidget *parent)
     });
 }
 
-void SignIn::onServerResponse() {
-    QByteArray responseData = socket->readAll();
-    QJsonDocument doc = QJsonDocument::fromJson(responseData);
-    QJsonObject json = doc.object();
-
-    if (json["status"].toString() == "success") {
-        info->setStyleSheet("font-weight:bold;"
-                            "font-size:15px;"
-                            "background-color:grey;"
-                            "color:white;"
-                            );
-        playSystemSound("Speech On.wav");
-        info->setText("Success");
-
-        this->close();
-        messengerWin *MainWindow = new messengerWin(enter_signIn->text());
-        MainWindow->show();
-
-    }else if(json["status"].toString() == "UserExist"){
-        info->setStyleSheet("font-weight:bold;"
-                            "font-size:15px;"
-                            "background-color:grey;"
-                            "color:white;"
-                            );
-        playSystemSound("Windows Ding.wav");
-        info->setText("A user with that name already exists.");
+void SignIn::ServerResponse(){
+    try {
+        if (socket && socket->is_open()) {
+            boost::asio::ip::tcp::endpoint remote_ep = socket->remote_endpoint();
+            qDebug() << "Connected to: " << remote_ep.address().to_string() << ":" << remote_ep.port();
+        }else{
+            qDebug() << "Connected no";
+            return;
+        }
+    } catch (const std::exception& e) {
+        qDebug() << "Exception: " << e.what();
+        return;
     }
-    else if(json["status"].toString() == "error"){
-        info->setStyleSheet("font-weight:bold;"
-                           "font-size:15px;"
-                           "background-color:grey;"
-                           "color:white;"
-                           );
-        playSystemSound("Windows Ding.wav");
-        info->setText("Login or Password area incorrect");
-    }
+
+    boost::asio::async_read_until(
+    *socket,
+    bufferFromServer,
+    '\n',
+    [this](const boost::system::error_code& ec, std::size_t bytes_transferred){
+               if(!ec){
+                std::string jsonDataServer((std::istreambuf_iterator<char>(&bufferFromServer)), std::istreambuf_iterator<char>());
+                bufferFromServer.consume(bytes_transferred);
+                jsonDataServer.erase(std::remove(jsonDataServer.begin(), jsonDataServer.end(), '\x00'), jsonDataServer.end());
+
+                qDebug() << "Сирі отримані дані:" << QByteArray::fromStdString(jsonDataServer);
+
+                QByteArray jsonData = QByteArray::fromStdString(jsonDataServer);
+                QJsonDocument doc = QJsonDocument::fromJson(jsonData);
+
+                if (doc.isNull()) {
+                    qDebug() << "Invalid JSON received!";
+                    return;
+                }
+                QJsonObject json = doc.object();
+
+            QMetaObject::invokeMethod(this, [this, json]() {
+                if (json["status"].toString() == "success") {
+                    info->setStyleSheet("font-weight:bold;"
+                                        "font-size:15px;"
+                                        "background-color:grey;"
+                                        "color:white;"
+                                        );
+                    playSystemSound("Speech On.wav");
+                    info->setText("Success");
+
+                    this->close();
+                    messengerWin *MainWindow = new messengerWin(enter_signIn->text(),io,socket);
+                    MainWindow->show();
+
+                }else if(json["status"].toString() == "UserExist"){
+                    info->setStyleSheet("font-weight:bold;"
+                                        "font-size:15px;"
+                                        "background-color:grey;"
+                                        "color:white;"
+                                        );
+                    playSystemSound("Windows Ding.wav");
+                    info->setText("A user with that name already exists.");
+                }
+                else if(json["status"].toString() == "error"){
+                    info->setStyleSheet("font-weight:bold;"
+                                        "font-size:15px;"
+                                        "background-color:grey;"
+                                        "color:white;"
+                                        );
+                    playSystemSound("Windows Ding.wav");
+                    info->setText("Login or Password area incorrect");
+                }
+            }, Qt::QueuedConnection);
+            }else {
+                   if (ec == boost::asio::error::eof) {
+                       qDebug() << "Server closed connection.";
+                   }
+                qDebug() << "Error reading data: " << ec.message();
+                   qDebug() <<ec.what();
+                return;
+            }
+        }
+    );
 }
 
 void SignIn::playSystemSound(const QString& soundName) {
@@ -242,5 +318,7 @@ void SignIn::playSystemSound(const QString& soundName) {
 SignIn::~SignIn()
 {
     qDebug() << "SignIn destructor called";
+    socket->close();
+
     delete ui;
 }

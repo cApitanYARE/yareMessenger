@@ -9,6 +9,9 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(ASIO_INCLUDE_DIR "D:/visualStudio/boost_1_87_0/boost_1_87_0")
+
+
 # Вибір бібліотек Qt
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Core Network Sql Gui)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Core Network Sql Gui)
@@ -27,6 +30,10 @@ target_link_libraries(YareMessengerServer
     PRIVATE Qt${QT_VERSION_MAJOR}::Sql
     PRIVATE Qt${QT_VERSION_MAJOR}::Gui
 )
+
+target_include_directories(YareMessengerServer PRIVATE ${ASIO_INCLUDE_DIR})
+
+
 include(GNUInstallDirs)
 install(TARGETS YareMessengerServer
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

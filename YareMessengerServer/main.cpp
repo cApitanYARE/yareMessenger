@@ -6,7 +6,10 @@ int main(int argc, char *argv[])
 {
     QCoreApplication a(argc, argv);
 
-    Server myserver;
+    boost::asio::io_context io;
+    Server server(io,12345);
+    server.async_accept();
+    io.run();
     // Set up code that uses the Qt event loop here.
     // Call a.quit() or a.exit() to quit the application.
     // A not very useful example would be including

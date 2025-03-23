@@ -13,7 +13,6 @@
 #include <QMessageBox>
 #include <QQueue>
 
-#include <QTcpSocket>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QCryptographicHash>
@@ -32,8 +31,12 @@
 #include <QBuffer>
 
 #include <QSoundEffect>
+#include <QCloseEvent>
 
+#include <optional>
+#include <queue>
 
+#include <boost/asio.hpp>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -46,8 +49,11 @@ class messengerWin : public QMainWindow
     Q_OBJECT
 
 public:
+    explicit messengerWin(const QString &username,boost::asio::io_context& context,std::shared_ptr<boost::asio::ip::tcp::socket> socket = nullptr,QWidget *parent = nullptr);
 
-    explicit messengerWin(const QString &username,QWidget *parent = nullptr);
+    std::mutex bufferMutex;
+
+    int maxMessageId = 0;
 
     QVBoxLayout * mainLayout;
 
@@ -61,9 +67,6 @@ public:
     QWidget *chatwindow;
     QWidget *currentChat = nullptr;
     QScrollArea *scrollArea;
-
-
-
 
     QWidget *centralWidget;
 
@@ -82,12 +85,7 @@ public:
     QStackedWidget *stackedWidget;
     QStackedWidget *stackedActionWidget;
 
-    QTcpSocket *socket;
-
-
-
     QLabel *chatWithSomeone;
-
 
     QLabel *stateAction;
 
@@ -100,40 +98,64 @@ public:
     QLabel *chatsSearchLabel;
     QVBoxLayout *chatsSearchLabelLayout;
 
-
-
     QVBoxLayout *layoutUpperWidget;
     QHBoxLayout *logOutLabelLayout;
     QLabel *upperLayoutLabel;
     QPushButton *logOut;
 
-
     QSoundEffect effect;
 
-
+    std::string jsonData;
     QString own;
 
-
-    QString lastReceivedMessageId = "";
-
     void playSystemSound(const QString& soundName);
-    void sendMessageToSomeone(QString from,QString to, QString message);
     void insertMessageToSomeone(QString from,QString to, QString message);
-    void loadchat(QString from,QString to);
     void insertMessageToChat(QString from, QString to, QString message, QVector<int> date, QString messageId);
-    void loadAllChats(QString current);
-
     void createChatButton(QString name, bool isSearchUser);
-    void loadNewMessages(QString from, QString to);
 
+    void closeEvent(QCloseEvent *event) override;
 
+    //with socket
+    void loadchat(QString from,QString to);
+    void loadAllChats(QString current);
+    void sendMessageToSomeone(QString from,QString to, QString message);
     void setToLoadAllChats(QString from,QString to);
-
-
+    void loadNewMessages(QString from, QString to);
+    void actionWithServer(boost::asio::ip::tcp::socket& socket,QJsonObject jsonObj);
+    void listening();
+    void connectToServer();
 
     ~messengerWin();
 
 private:
+    QString searchUser;
+
+    QString sendFrom;
+    QString sendTo;
+    QString message;
+    QString photo;
+
+    QSet<QString> addedUsers;
+    QString current_yaerDayMount;
+
+    QSet<QString> allChats;
+
+    QSet<QString> addedDates;
+
+
+    QString  insert_from;
+    QString  insert_to;
+    QString  insert_message;
+    QVector<int>  insert_date;
+
+    QString lastMessageText;
+
+    boost::asio::io_context& io;
+    std::shared_ptr<boost::asio::ip::tcp::socket> socket;
+    boost::asio::streambuf bufferFromServer;
+
+
     Ui::messengerWin *ui;
 };
+
 #endif // MESSENGERWIN_H

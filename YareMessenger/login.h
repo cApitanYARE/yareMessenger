@@ -10,7 +10,6 @@
 #include <QHBoxLayout>
 #include <QString>
 
-#include <QTcpSocket>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QCryptographicHash>
@@ -25,6 +24,11 @@
 #include "signin.h"
 #include "messengerwin.h"
 
+
+namespace ioN = boost::asio;
+using tcpN = ioN::ip::tcp;
+using socketN = ioN::ip::tcp::socket;
+
 extern QString NameUser;
 
 namespace Ui {
@@ -36,9 +40,9 @@ class LogIn : public QWidget
     Q_OBJECT
 
 public:
-    explicit LogIn(QWidget *parent = nullptr);
+    explicit LogIn(boost::asio::io_context& context,QWidget *parent = nullptr);
 
-
+    bool isConnected = false;
 
     QLabel* login;
     QLineEdit* enter_log;
@@ -52,24 +56,23 @@ public:
 
     QVBoxLayout *Vlayout;
 
+    std::string jsonData;
+
     QLabel* info;
-
-
-
-    QTcpSocket *socket;
-
-
-
-
     QSoundEffect effect;
     void playSystemSound(const QString& soundName);
     ~LogIn();
 
-    \
-
 private slots:
-    void onServerResponse();
+    void ServerResponse();
+    void connectToServer();
 private:
+    //asio
+    boost::asio::io_context& io;
+    std::shared_ptr<boost::asio::ip::tcp::socket> socket;
+    boost::asio::streambuf bufferFromServer;
+    boost::asio::steady_timer timer;
+
     Ui::LogIn *ui;
 };
 

@@ -3,32 +3,11 @@
 
 #include "login.h"
 
-QString searchUser;
-
-QString sendFrom;
-QString sendTo;
-QString message;
-QString photo;
-
-QSet<QString> addedUsers;
-QString current_yaerDayMount;
-
-
-QSet<QString> allChats;
-
-QSet<QString> addedDates;
-
-
-QString  insert_from;
-QString  insert_to;
-QString  insert_message;
-QVector<int>  insert_date;
-
-QString lastMessageText;
-
-messengerWin::messengerWin(const QString &username,QWidget *parent)
+messengerWin::messengerWin(const QString &username,boost::asio::io_context& context,std::shared_ptr<boost::asio::ip::tcp::socket> socket,QWidget *parent)
     : QMainWindow(parent)
-    , ui(new Ui::messengerWin)
+    , ui(new Ui::messengerWin),
+    socket(socket),
+    io(context)
     , own(username)
 {
     ui->setupUi(this);
@@ -198,137 +177,18 @@ messengerWin::messengerWin(const QString &username,QWidget *parent)
         this->setCentralWidget(centralWidget);
 
     }
+    qDebug() << "messenger";
+    connectToServer();
 
-
-
-    socket = new QTcpSocket(this);
-    connect(socket, &QTcpSocket::connected, this, [this]() {
-        qDebug() << "Connected to server";
-        if (!own.isEmpty()) {
-            qDebug() << "Calling loadAllChats with own =" << own;
-
-            if (socket->state() == QTcpSocket::ConnectedState) {
-                loadAllChats(own);
-            } else {
-                qDebug() << "Socket is not connected yet!";
-            }
-        } else {
-            qDebug() << "Variable 'own' is empty, skipping loadAllChats";
-        }
-    });
-    socket->connectToHost("127.0.0.1", 12345);
-    if (!socket->waitForConnected(2000)) {
-        qDebug() << "Failed to connect to server!";
-    }
-
-    connect(startSearch,&QPushButton::clicked,this,[this]{
+    //search someOne
+    connect(startSearch,&QPushButton::clicked,this,[this,socket]{
         QString username = search->text();
 
         QJsonObject json;
         json["action"] = "searchUser";
         json["username"] = username;
 
-        QJsonDocument doc(json);
-        socket->connectToHost("127.0.0.1", 12345);
-        if (socket->waitForConnected(1000)) {
-            socket->write(doc.toJson());
-        } else {
-            stateAction->setText("Cannot find the user!");
-        }
-    });
-
-    connect(socket, &QTcpSocket::readyRead, this, [this] {
-        QByteArray responseData = socket->readAll();  // Отримуємо дані від сервера
-        QJsonDocument doc = QJsonDocument::fromJson(responseData);  // Перетворюємо у JSON
-        if (doc.isNull()) {
-            qDebug() << "Error: Invalid JSON received!";
-            return;
-        }
-        QJsonObject json = doc.object();  // Отримуємо об'єкт JSON
-        searchUser = json["user"].toString();
-        // Перевірка статусу відповіді
-        if (json["status"].toString() == "success") {
-            if (!searchUser.isEmpty() && !addedUsers.contains(searchUser)){
-                createChatButton(searchUser,true);
-                addedUsers.insert(searchUser);
-            }
-        }else if(json["status"].toString() == "message"){
-
-            sendFrom = json["from"].toString();
-            sendTo = json["to"].toString();
-            message = json["message"].toString();
-
-            setToLoadAllChats(sendFrom, sendTo);
-            loadAllChats(own);
-        }else if (json["status"].toString() == "infoAboutChat") {
-            QJsonArray messagesArray = json["data"].toArray();
-
-            for (const auto& msg : messagesArray) {
-                QJsonObject messageObject = msg.toObject();
-
-                QString from = messageObject["from"].toString();
-                QString to = messageObject["to"].toString();
-                QString message = messageObject["message"].toString();
-                QString messageId = messageObject["id"].toString();  // ID повідомлення
-                QString time = messageObject["timestamp"].toString();
-
-                QDateTime dateTime = QDateTime::fromString(time, Qt::ISODate);
-                QVector<int> date = {dateTime.date().year(), dateTime.date().month(), dateTime.date().day(),
-                                     dateTime.time().hour(), dateTime.time().minute()};
-
-                insertMessageToChat(from, to, message, date, messageId);
-            }
-        }
-        else if(json["status"].toString() == "loadAllChats"){
-            if (json.contains("currentChats")) {
-                QJsonArray currentChatsArray = json["currentChats"].toArray();
-                int sizeChats = currentChatsArray.size();
-                if (sizeChats == 0) {
-                    qDebug() << "No chats available";
-                }
-                for (int i = 0; i < sizeChats; ++i) {
-                    QString chatName = currentChatsArray[i].toString();
-
-                    qDebug() << "Chat: " << chatName;
-
-                    if(!allChats.contains(chatName)) {
-                        createChatButton(chatName,false);
-                        allChats.insert(chatName);
-                    }
-                }
-            } else {
-                qDebug() << "No currentChats key found in response!";
-            }
-        }
-        else if(json["status"].toString() == "newMessages"){
-            QJsonArray messages = json["messages"].toArray();
-            int maxMessageId = lastReceivedMessageId.toInt();
-            for (const QJsonValue &messageValue : messages) {
-                QJsonObject message = messageValue.toObject();
-
-                QString from = message["from"].toString();
-                QString to = message["to"].toString();
-                QString messageText = message["message"].toString();
-                QString time = message["timestamp"].toString();
-                int messageId = message["id"].toInt();
-
-                if (messageId > maxMessageId) {
-                    maxMessageId = messageId;
-                }
-
-
-                QDateTime dateTime = QDateTime::fromString(time, Qt::ISODate);
-                QVector<int> date = {dateTime.date().year(), dateTime.date().month(), dateTime.date().day(),
-                                     dateTime.time().hour(), dateTime.time().minute()};
-
-                insertMessageToChat(from, to, messageText, date, QString::number(messageId));
-            }
-            lastReceivedMessageId = QString::number(maxMessageId);
-        }
-        else {
-            stateAction->setText("User doesn't  exist!");
-
-        }
+        actionWithServer(*socket,json);
     });
 
     connect(search,&QLineEdit::textChanged,this,[this]{
@@ -354,118 +214,20 @@ messengerWin::messengerWin(const QString &username,QWidget *parent)
     });
 
     connect(logOut,&QPushButton::clicked,this,[this]{
-        LogIn *login = new LogIn();
+        LogIn *login = new LogIn(io);
         login->show();
         this->close();
     });
 
-    QString currentChatName = upperNameLabel->text();
-    QTimer *messageUpdateTimer = new QTimer(this);
-    connect(messageUpdateTimer, &QTimer::timeout, this, [this,currentChatName]() {
-        QString updatedChatName = upperNameLabel->text();
-        if (!updatedChatName.isEmpty()) {
-            loadNewMessages(own, updatedChatName);
-        }
-
-        QTimer::singleShot(500, this, [this]() {
+    QTimer::singleShot(500,this,[this]{
+        QMetaObject::invokeMethod(this, [this]() {
             loadAllChats(own);
-        });
-
-    });
-    messageUpdateTimer->start(1000);
-
-}
-
-///? mb delete
-void messengerWin::insertMessageToSomeone(QString from,QString to, QString message){
-     qDebug() << "insertMessageToSomeone";
-    QDateTime currentDateTime = QDateTime::currentDateTime();
-
-    int year = currentDateTime.date().year();
-    int month = currentDateTime.date().month();
-    int day = currentDateTime.date().day();
-
-    int hour = currentDateTime.time().hour();
-    int minute = currentDateTime.time().minute();
-
-    QHBoxLayout *messageLayout = new QHBoxLayout(this);
-    QString hourAndMinutes = QString::number(hour) + ":" + QString::number(minute);
-    QLabel *messageLabel = new QLabel(message.leftJustified(5, ' ') + " | " + hourAndMinutes + " |");
-    QLabel *likeAIcon = new QLabel();
-
-    QString yaerDayMount = QString::number(day) +'-'+  QString::number(month) +'-'+ QString::number(year);
-
-    if (chatwindow->property("current_yaerDayMount").toString() != yaerDayMount) {
-        chatwindow->setProperty("current_yaerDayMount", yaerDayMount);
-
-        QLabel *yaerDayMountLabel = new QLabel(yaerDayMount);
-        yaerDayMountLabel->setStyleSheet("background-color:#a4c6bc; color:white;");
-        yaerDayMountLabel->setAlignment(Qt::AlignCenter);
-
-        QHBoxLayout *Layout_yaerDayMountLabel = new QHBoxLayout();
-        Layout_yaerDayMountLabel->addWidget(yaerDayMountLabel);
-
-        yaerDayMountLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        chatLayout->addLayout(Layout_yaerDayMountLabel);
-    }
-
-
-
-
-    if(own == from){
-        likeAIcon->setText("Me");
-        likeAIcon->setStyleSheet("padding:1px;"
-                                 "color:black;"
-                                 "background-color:white;"
-                                 "border-radius:10px;"
-                                 "border: 1px solid black;"
-                                 "max-width: 25px;"
-                                 "height: 15px;");
-
-        messageLayout->addWidget(likeAIcon);
-        messageLabel->setStyleSheet("padding:5px;"
-                                    "background-color:#122b22;"
-                                    "color:white;"
-                                    "max-height:20px;"
-                                    "border-radius:3px;"
-                                    "margin: 0;");
-    }else{
-        likeAIcon->setText(from[0].toUpper());
-        likeAIcon->setStyleSheet("padding:3px;"
-                                 "color:black;"
-                                 "background-color:white;"
-                                 "border-radius:10px;"
-                                 "border: 1px solid black;"
-                                 "width: 15px;"
-                                 "height: 15px;");
-        messageLayout->addWidget(likeAIcon);
-        messageLabel->setStyleSheet("padding:5px;"
-                                    "background-color:#6d8c82;"
-                                    "color:white;"
-                                    "max-height:20px;"
-                                    "border-radius:3px;"
-                                    "margin: 0;");
-        messageLayout->addWidget(likeAIcon);
-    }
-    messageLayout->setContentsMargins(0, 0, 0, 0);
-    messageLayout->setSpacing(5);
-    messageLayout->setAlignment(likeAIcon, Qt::AlignLeft);
-    messageLayout->setAlignment(Qt::AlignLeft);
-
-    messageLabel->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
-    messageLabel->adjustSize();
-
-    messageLayout->addWidget(messageLabel, 0, Qt::AlignLeft);
-    chatLayout->addLayout(messageLayout);
-
-    QTimer::singleShot(100, this, [this]() {
-        scrollArea->verticalScrollBar()->setValue(scrollArea->verticalScrollBar()->maximum());
+        }, Qt::QueuedConnection);
     });
 }
-//?
 
 void messengerWin::insertMessageToChat(QString from, QString to, QString message, QVector<int> date, QString messageId) {
-
+    qDebug() << "insertMessageToChat";
     QHBoxLayout *messageLayout = new QHBoxLayout();
     QString hourAndMinutes = QString::number(date[3]) + ":" + QString::number(date[4]);
     QLabel *messageLabel = new QLabel(message + " | " + hourAndMinutes);
@@ -520,107 +282,8 @@ void messengerWin::insertMessageToChat(QString from, QString to, QString message
     }
 }
 
-
-void messengerWin::loadAllChats(QString current){
-        QJsonObject json;
-        json["action"] = "loadAllChats";
-        json["current"] = current;
-
-        QJsonDocument doc(json);
-        QByteArray jsonData = doc.toJson();
-
-        qDebug() << "Checking socket state...";
-        if (!socket->isOpen()) {
-        qDebug() << "Socket is not open, attempting to reconnect...";
-        socket->connectToHost("127.0.0.1", 12345);
-
-        if (!socket->waitForConnected(2000)) {
-            qDebug() << "Failed to reconnect!";
-            return;
-        }
-    }
-
-        qDebug() << "Sending request to server...";
-        socket->write(jsonData);
-        socket->flush();  // Додаємо flush, щоб точно відправити пакет
-
-        qDebug() << "Request sent successfully.";
-}
-void messengerWin::loadchat(QString from,QString to){
-
-    QJsonObject json;
-    json["action"] = "loadchat";
-    json["from"] = from;
-    json["to"] = to;
-
-    QJsonDocument doc(json);
-    QByteArray jsonData = doc.toJson();
-
-    if (!socket->isOpen()) {
-        socket->connectToHost("127.0.0.1", 12345);
-    }
-
-    socket->write(jsonData);
-}
-void messengerWin::sendMessageToSomeone(QString from,QString to, QString message){
-    QJsonObject json;
-    json["action"] = "sendMessage";
-    json["from"] = from;
-    json["to"] = to;
-    json["message"] = message;
-
-    QJsonDocument doc(json);
-    QByteArray jsonData = doc.toJson();
-
-    qDebug() << "Prepared JSON: " << jsonData;
-
-    if (!socket->isOpen()) {
-        socket->connectToHost("127.0.0.1", 12345);
-    }
-
-    socket->write(jsonData);
-}
-void messengerWin::setToLoadAllChats(QString from,QString to){
-    QJsonObject json;
-
-    json["action"] = "setToLoadAllChats";
-    json["current"] = from;
-    json["search"] = to;
-
-    QJsonDocument doc(json);
-    QByteArray jsonData = doc.toJson();
-
-
-
-    if (!socket->isOpen()) {
-        qDebug() << "Socket is not open, attempting to reconnect...";
-        socket->connectToHost("127.0.0.1", 12345);
-    }else{
-        qDebug() << "Socket is  open";
-    }
-    socket->write(jsonData);
-    socket->flush();
-
-}
-
-void messengerWin::loadNewMessages(QString from, QString to) {
-    QJsonObject json;
-    json["action"] = "loadNewMessages";
-    json["from"] = from;
-    json["to"] = to;
-    json["lastMessageId"] = lastReceivedMessageId.toInt();
-
-    QJsonDocument doc(json);
-    QByteArray jsonData = doc.toJson();
-
-    if (!socket->isOpen()) {
-        socket->connectToHost("127.0.0.1", 12345);
-    }
-
-    socket->write(jsonData);
-}
-
 void messengerWin::createChatButton(QString name, bool isSearchUser) {
+
     qDebug() << "Створення кнопки чату для: " << name;
 
     QPushButton* chatButton = new QPushButton(this);
@@ -653,7 +316,6 @@ void messengerWin::createChatButton(QString name, bool isSearchUser) {
 
     connect(chatButton, &QPushButton::clicked, this, [this, name] {
         playSystemSound("ding.wav");
-
         if (currentChat && currentChat->parent()) {
             currentChat->hide();
         }
@@ -741,11 +403,23 @@ void messengerWin::createChatButton(QString name, bool isSearchUser) {
             stackedWidget->setCurrentWidget(chatwindow);
             currentChat = chatwindow;
 
+
             connect(sendMessage, &QLineEdit::textChanged, this, [this] {
                 BtnSendMessage->setEnabled(!sendMessage->text().trimmed().isEmpty());
             });
 
+            QTimer::singleShot(200, this, [this,name]() {
+                loadchat(own,name);
+            });
+
+            QTimer *messageUpdateTimer = new QTimer(this);
+            connect(messageUpdateTimer, &QTimer::timeout, this, [this,name]() {
+                loadNewMessages(own,name);
+            });
+            messageUpdateTimer->start(300);
+
             connect(BtnSendMessage, &QPushButton::clicked, this, [this, name] {
+                qDebug() << "BtnSendMessage";
                 QString message = sendMessage->text().trimmed();
                 if (!message.isEmpty()) {
                     if (own.isEmpty() || name.isEmpty()) {
@@ -768,6 +442,259 @@ void messengerWin::playSystemSound(const QString& soundName) {
     effect.play();
 }
 
+//with socket
+void messengerWin::loadAllChats(QString current){
+    qDebug()<<"loadAllChats";
+    QJsonObject json;
+    json["action"] = "loadAllChats";
+    json["current"] = current;
+
+    actionWithServer(*socket,json);
+}
+void messengerWin::loadchat(QString from,QString to){
+    qDebug()<<"loadchat";
+
+    QJsonObject json;
+    json["action"] = "loadchat";
+    json["from"] = from;
+    json["to"] = to;
+
+    actionWithServer(*socket,json);
+}
+void messengerWin::sendMessageToSomeone(QString from,QString to, QString message){
+    qDebug()<<"sendMessageToSomeone";
+
+    QJsonObject json;
+    json["action"] = "sendMessage";
+    json["from"] = from;
+    json["to"] = to;
+    json["message"] = message;
+
+    actionWithServer(*socket,json);
+}
+void messengerWin::setToLoadAllChats(QString from,QString to){
+    qDebug()<<"setToLoadAllChats";
+
+
+    QJsonObject json;
+
+    json["action"] = "setToLoadAllChats";
+    json["current"] = from;
+    json["search"] = to;
+
+    actionWithServer(*socket,json);
+}
+void messengerWin::loadNewMessages(QString from, QString to) {
+    qDebug()<<"loadNewMessages";
+
+    QJsonObject json;
+    json["action"] = "loadNewMessages";
+    json["from"] = from;
+    json["to"] = to;
+    json["lastMessageId"] = maxMessageId;
+
+    actionWithServer(*socket,json);
+}
+
+void messengerWin::actionWithServer(boost::asio::ip::tcp::socket& socket,QJsonObject jsonObj){
+    if(!socket.is_open()) {
+        qDebug() << "Socket is closed! Cannot send data.";
+        return;
+    }
+    QJsonDocument doc(jsonObj);
+    if (doc.isEmpty()) {
+        qDebug() << "Error: JSON document is empty!";
+        return;
+    }
+    jsonData = doc.toJson(QJsonDocument::Compact).toStdString();
+    qDebug()<<jsonData;
+
+    if(socket.is_open()){
+        boost::asio::async_write(
+            socket,
+            boost::asio::buffer(jsonData),
+            [&](const boost::system::error_code& ec, std::size_t bytes_transferred){
+                if (!ec) {
+                    qDebug() << "Sent " << bytes_transferred << " bytes to server\n";
+                }else if (ec == boost::asio::error::operation_aborted) {
+                    qDebug() << "Operation aborted, ignoring error.";
+                } else {
+                    qDebug() << "Write error: " << ec.message() << '\n';
+                    qDebug() << "Socket may have been closed. Attempting to reconnect...";
+                    connectToServer();
+                }
+            });
+    }else qDebug()<<"socket close";
+}
+
+void messengerWin::listening(){
+    if (!socket || !socket->is_open()) {
+        qDebug() << "Socket closed! Trying to reconnect...";
+        connectToServer();
+        return;
+    }
+    boost::asio::async_read_until(
+        *socket,
+        bufferFromServer,
+        '\n',
+        [this](const boost::system::error_code& ec, std::size_t bytes_transferred){
+            if (ec == boost::asio::error::eof) {
+                qDebug() << "Server closed the connection!";
+                socket->close();  // Закриваємо сокет після розриву
+                connectToServer();
+                return;
+            }
+            if(!ec){
+                std::lock_guard<std::mutex> lock(bufferMutex);
+                std::vector<char> buffer(std::istreambuf_iterator<char>(&bufferFromServer), {});
+                std::string jsonDataServer(buffer.begin(), buffer.end());
+                bufferFromServer.consume(bytes_transferred);
+                jsonDataServer.erase(std::remove(jsonDataServer.begin(), jsonDataServer.end(), '\x00'), jsonDataServer.end());
+
+                qDebug() << "messengerData: " << QByteArray::fromStdString(jsonDataServer);
+
+                QByteArray byteArray = QByteArray::fromStdString(jsonDataServer);
+                qDebug() <<"Size: "<< jsonDataServer.size();
+                QJsonDocument doc = QJsonDocument::fromJson(byteArray);
+
+                if (doc.isNull()) {
+                    qDebug() << "Error: Invalid JSON received!";
+                    return;
+                }else{
+                    QJsonObject json = doc.object();
+
+                    if (!json.contains("status")) {
+                        qDebug() << "Error: JSON has no status field!";
+                    }else{
+                    QMetaObject::invokeMethod(this, [this, json]() {
+                        searchUser = json["user"].toString();
+                        qDebug() << "==============="<<json["status"].toString()<<"=============================";
+                        if (json["status"].toString() == "success") {
+                            if (!searchUser.isEmpty() && !addedUsers.contains(searchUser)){
+                                createChatButton(searchUser,true);
+                                addedUsers.insert(searchUser);
+                            }
+                        }else if(json["status"].toString() == "message"){
+                            sendFrom = json["from"].toString();
+                            sendTo = json["to"].toString();
+                            message = json["message"].toString();
+
+
+                            setToLoadAllChats(sendFrom, sendTo);
+                        }else if (json["status"].toString() == "infoAboutChat") {
+                                QString from = json["from"].toString();
+                                QString to = json["to"].toString();
+                                QString message = json["message"].toString();
+                                QString messageId = json["id"].toString();
+                                maxMessageId = messageId.toInt();
+                                QString time = json["timestamp"].toString();
+
+                                QDateTime dateTime = QDateTime::fromString(time, Qt::ISODate);
+                                QVector<int> date = {dateTime.date().year(), dateTime.date().month(), dateTime.date().day(),
+                                                     dateTime.time().hour(), dateTime.time().minute()};
+
+
+                                insertMessageToChat(from, to, message, date, messageId);
+                        }
+                        else if(json["status"].toString() == "loadAllChats"){
+                            if (json.contains("currentChats")) {
+                                QJsonArray currentChatsArray = json["currentChats"].toArray();
+                                int sizeChats = currentChatsArray.size();
+                                if (sizeChats == 0) {
+                                    qDebug() << "No chats available";
+                                }
+                                for (int i = 0; i < sizeChats; ++i) {
+                                    QString chatName = currentChatsArray[i].toString();
+
+                                    qDebug() << "Chat: " << chatName;
+
+                                    if(!allChats.contains(chatName)) {
+                                        createChatButton(chatName,false);
+                                        allChats.insert(chatName);
+                                    }
+                                }
+                            } else {
+                                qDebug() << "No currentChats key found in response!";
+                            }
+                        }
+                        else if(json["status"].toString() == "newMessages"){
+                            QJsonArray messages = json["messages"].toArray();
+                                QString from = json["from"].toString();
+                                QString to = json["to"].toString();
+                                QString messageText = json["message"].toString();
+                                QString time = json["timestamp"].toString();
+                                QString messageId = json["id"].toString();
+
+                                maxMessageId = messageId.toInt();;
+
+                                QDateTime dateTime = QDateTime::fromString(time, Qt::ISODate);
+                                QVector<int> date = {dateTime.date().year(), dateTime.date().month(), dateTime.date().day(),
+                                                     dateTime.time().hour(), dateTime.time().minute()};
+
+                                insertMessageToChat(from, to, messageText, date, messageId);
+
+                                QTimer::singleShot(300,this,[this]{
+                                    QMetaObject::invokeMethod(this, [this]() {
+                                        loadAllChats(own);
+                                    }, Qt::QueuedConnection);
+                                });
+                        }
+                        else stateAction->setText("User doesn't  exist!");
+                      }, Qt::QueuedConnection);
+                    }
+                }
+            listening();
+            }else {
+                qDebug() << "Error reading data: " << ec.message();
+                socket->close();
+                connectToServer();
+                return;
+            }
+    });
+
+}
+
+void messengerWin::connectToServer(){
+        //contect to server
+    if(!socket || !socket->is_open()){
+        socket->async_connect(boost::asio::ip::tcp::endpoint(boost::asio::ip::make_address("127.0.0.1"), 12345),[this](const boost::system::error_code& ec){
+            if (!ec) {
+                qDebug() << "Connected to server!\n";
+                listening();
+                if(!own.isEmpty()){
+                    if(socket->is_open()){
+                        qDebug() << "Calling loadAllChats with own =" << own;
+                        QMetaObject::invokeMethod(this, [this]() {
+                           // IMORTANT DONT MUST ALLWAYS WORK ONLY A FEW WAY WHEN SEARCH AND WRITE TO SOMEONE, WHEN SOMEONE NEW WRITE TO USER
+                            //loadAllChats(own);  // Now safely called in Qt thread
+                        }, Qt::QueuedConnection);
+                    }
+                    else qDebug() << "Socket is not connected yet!";
+                }else {
+                    qDebug() << "Variable 'own' is empty, skipping loadAllChats";
+                }
+            } else {
+                qDebug() << "1Connection failed: " << ec.message() << "\n";
+                //QTimer::singleShot(500, this, &messengerWin::connectToServer);  // Retry connection
+
+            }
+        });
+    }else{
+        qDebug() << "socket connected";
+        listening();
+    }
+}
+
+void messengerWin::closeEvent(QCloseEvent *event) {
+    QMessageBox::StandardButton reply;
+    reply = QMessageBox::question(this, "Confirmation", "Close this window?",
+                                  QMessageBox::Yes | QMessageBox::No);
+    if (reply == QMessageBox::Yes) {
+        event->accept();  // Дозволяємо закриття
+    } else {
+        event->ignore();  // Відміняємо закриття
+    }
+}
 
 messengerWin::~messengerWin()
 {

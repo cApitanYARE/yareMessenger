@@ -3,8 +3,7 @@
 
 
 
-#include <QTcpServer>
-#include <QTcpSocket>
+#include <QTimer>
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSqlError>
@@ -17,31 +16,52 @@
 
 #include <QPixmap>
 
-class Server : public QTcpServer{
+#include <boost/asio.hpp>
+#include <memory>
+
+namespace ioN = boost::asio;
+using tcpN = ioN::ip::tcp;
+using socketN = ioN::ip::tcp::socket;
+
+
+class Server : public QObject {
     Q_OBJECT
 
 public:
-    Server();
+    Server(ioN::io_context& io_context,short port);
 
-    QTcpSocket *socket;
-    void incomingConnection(qintptr socketDescriptor);
+    int carrentMessageId = 0;
+
+    void async_accept();
+
+    QString chunk;
+    QString responseString;
+
+
+    QJsonArray SendLargeDataArray;
+    QJsonObject DataString;
+    //QJsonDocument DataDoc;
+
     ~Server();
 private slots:
-    void onReadyRead();
-    void handleRegister(QTcpSocket *clientSocket, const QJsonObject &json);
-    void handleLogin(QTcpSocket *clientSocket, const QJsonObject &request);
-    void searchUser(QTcpSocket *clientSocket, const QJsonObject &request);
-    void sendMessageToSomeone(QTcpSocket *clientSocket, const QJsonObject &request);
-    void loadChat(QTcpSocket *clientSocket, const QJsonObject &request);
+    void ReadyRead(std::shared_ptr<boost::asio::ip::tcp::socket> socket,QString data);
+    void handleRegister(std::shared_ptr<boost::asio::ip::tcp::socket> socket, const QJsonObject &json);
+    void handleLogin(std::shared_ptr<boost::asio::ip::tcp::socket> socket, const QJsonObject &request);
+    void searchUser(std::shared_ptr<boost::asio::ip::tcp::socket> socket, const QJsonObject &request);
+    void sendMessageToSomeone(std::shared_ptr<boost::asio::ip::tcp::socket> socket, const QJsonObject &request);
+    void loadChat(std::shared_ptr<boost::asio::ip::tcp::socket> socket, const QJsonObject &request);
 
-    void setToLoadAllChatsServer(QTcpSocket *clientSocket, const QJsonObject &request);
-    void loadAllChats(QTcpSocket *clientSocket, const QJsonObject &request);
-    void loadNewMessages(QTcpSocket *clientSocket, const QJsonObject &request);
+    void setToLoadAllChatsServer(std::shared_ptr<boost::asio::ip::tcp::socket> socket, const QJsonObject &request);
+    void loadAllChats(std::shared_ptr<boost::asio::ip::tcp::socket> socket, const QJsonObject &request);
+    void loadNewMessages(std::shared_ptr<boost::asio::ip::tcp::socket> socket, const QJsonObject &request);
+
 
 
     QString checkTableDB(QString from, QString to);
 
 private:
+    ioN::io_context& io_context;
+    tcpN::acceptor acceptor;
     QSqlDatabase db;
 };
 

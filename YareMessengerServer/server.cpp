@@ -1,6 +1,8 @@
 #include "server.h"
 
-Server::Server(){
+Server::Server(boost::asio::io_context& io_context,short port)
+    : io_context(io_context),
+    acceptor(io_context, tcpN::endpoint(tcpN::v4(), port)){
     db = QSqlDatabase::addDatabase("QODBC");
     db.setDatabaseName("DRIVER={SQL Server};SERVER=DESKTOP-HOKI7E3\\SQLEXPRESS;DATABASE=master;Trusted_Connection=yes;");
 
@@ -36,12 +38,13 @@ Server::Server(){
             } else {
                 qDebug() << "userDb table created or already exists.";
             }
-
+/*
             if (listen(QHostAddress::Any, 12345)) {
                 qDebug() << "Server is running on port 12345";
             } else {
                 qDebug() << "Error: Unable to start the server!";
             }
+*/
         } else {
             qDebug() << "Database error:" << db.lastError().text();
         }
@@ -50,44 +53,33 @@ Server::Server(){
     }
 }
 
-void Server::incomingConnection(qintptr socketDescriptor) {
-    QTcpSocket *clientSocket = new QTcpSocket;
-    if (clientSocket->setSocketDescriptor(socketDescriptor)) {
-        connect(clientSocket, &QTcpSocket::readyRead, this, &Server::onReadyRead);
-        connect(clientSocket, &QTcpSocket::disconnected, clientSocket, &QTcpSocket::deleteLater);
-        qDebug() << "New client connected, descriptor:" << socketDescriptor;
-    } else {
-        delete clientSocket;
-    }
-}
 
-void Server::onReadyRead() {
-    QTcpSocket *clientSocket = qobject_cast<QTcpSocket *>(sender());
-    if (!clientSocket)
-        return;
-    QByteArray requestData = clientSocket->readAll();
-    QJsonDocument doc = QJsonDocument::fromJson(requestData);
-    QJsonObject request = doc.object();
+void Server::ReadyRead(std::shared_ptr<boost::asio::ip::tcp::socket> socket,QString data){
+    qDebug() << "ReadyRead";
+    QJsonDocument docFromString = QJsonDocument::fromJson(data.toUtf8());
+    QJsonObject jsonFromString = docFromString.object();
+    QJsonObject request = docFromString.object();
 
-    if (!doc.isNull()) {
+    if (!docFromString.isNull()) {
         QString action = request["action"].toString();
         qDebug() << action;
         if (action == "register") {
-            handleRegister(clientSocket, request);
+            handleRegister(socket, request);
         } else if (action == "login") {
-            handleLogin(clientSocket, request);
+            handleLogin(socket, request);
         } else if (action == "searchUser") {
-            searchUser(clientSocket, request);
+            qDebug()<<"searchUser";
+            searchUser(socket, request);
         } else if (action == "sendMessage") {
-            sendMessageToSomeone(clientSocket, request);
+            sendMessageToSomeone(socket, request);
         } else if (action == "loadchat") {
-            loadChat(clientSocket, request);
+            loadChat(socket, request);
         } else if (action == "loadAllChats") {
-            loadAllChats(clientSocket, request);
+            loadAllChats(socket, request);
         } else if (action == "setToLoadAllChats") {
-            setToLoadAllChatsServer(clientSocket, request);
+            setToLoadAllChatsServer(socket, request);
         }else if(action == "loadNewMessages"){
-            loadNewMessages(clientSocket, request);
+            loadNewMessages(socket, request);
         }
         else {
             qDebug() << "Unknown action received: " << action;
@@ -95,10 +87,9 @@ void Server::onReadyRead() {
     } else {
         qDebug() << "Received invalid JSON!";
     }
-
 }
 
-void Server::handleRegister(QTcpSocket *clientSocket, const QJsonObject &request) {
+void Server::handleRegister(std::shared_ptr<boost::asio::ip::tcp::socket> socket, const QJsonObject &request) {
     QString username = request["username"].toString();
     QString password = request["password"].toString();
 
@@ -112,15 +103,28 @@ void Server::handleRegister(QTcpSocket *clientSocket, const QJsonObject &request
     query.bindValue(":username", username);
     query.exec();
 
-
     if(query.next()){
         response["status"] = "UserExist";
         QJsonDocument responseDoc(response);
-        clientSocket->write(responseDoc.toJson());
-        clientSocket->flush();
+        responseString = responseDoc.toJson();
+        try{
+            boost::asio::async_write(*socket, boost::asio::buffer(responseString),
+                                     [this,socket](const boost::system::error_code& ec, std::size_t /*bytes_transferred*/) {
+                                         if (!ec) {
+                                             // НЕ закривайте сокет одразу! Очікуйте нових запитів або обробляйте їх далі.
+                                             async_accept();
+                                         } else {
+                                             qDebug() << "Error sending response: " << QString::fromStdString(ec.message());
+                                             socket->close();
+                                         }
+                                     }
+                                     );
+        }
+        catch(const std::exception& e) {
+            qDebug() << "Exception: " << e.what();
+        }
         return;
     }
-
     query.prepare("INSERT INTO usersDB (username, password) VALUES (:username, :password)");
     query.bindValue(":username", username);
     query.bindValue(":password", password);
@@ -132,43 +136,91 @@ void Server::handleRegister(QTcpSocket *clientSocket, const QJsonObject &request
         response["status"] = "error";
         response["message"] = query.lastError().text();
     }
-
     QJsonDocument responseDoc(response);
-    clientSocket->write(responseDoc.toJson());
-    clientSocket->flush();
+    responseString = responseDoc.toJson();
+    //clientSocket->write(responseDoc.toJson());
+    //clientSocket->flush();
+    qDebug() << responseString;
+    if (!socket->is_open()) {
+        qDebug() << "Socket is closed!";
+        return;
+    }else  qDebug() << "Socket isn't closed!";
+    try{
+    boost::asio::async_write(*socket, boost::asio::buffer(responseString),
+        [this,socket](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+            if (!ec) {
+                qDebug() << "Response sent successfully.";
+                                    // НЕ закривайте сокет одразу! Очікуйте нових запитів або обробляйте їх далі.
+                qDebug() << responseString;
+                async_accept();
+            } else {
+                qDebug() << "Error sending response: " << QString::fromStdString(ec.message());
+                socket->close();
+            }
+        }
+    );
+    }
+    catch(const std::exception& e) {
+        qDebug() << "Exception: " << e.what();
+    }
 }
-void Server::handleLogin(QTcpSocket *clientSocket, const QJsonObject &request) {
+
+void Server::handleLogin(std::shared_ptr<boost::asio::ip::tcp::socket> socket, const QJsonObject &request) {
     QString username = request["username"].toString();
     QString password = request["password"].toString();
 
+    qDebug()<<username;
+    qDebug()<<password;
+
     QSqlQuery query;
+    QJsonObject response;
 
     query.prepare("SELECT password FROM usersDB WHERE username = :username");
     query.bindValue(":username", username);
 
-    QJsonObject response;
-    if (query.exec() && query.next()) {
-        QString storedHash = query.value(0).toString();
-
-        if (storedHash == password) {
-            response["status"] = "success";
-            response["message"] = "User enter successfully!";
-        }else{
+    if (query.exec()){
+        if (query.next()){
+            QString storedHash = query.value(0).toString();
+            qDebug() << "Stored hash: " << storedHash;
+            if (storedHash == password) {
+                response["status"] = "success";
+                response["message"] = "User entered successfully!";
+            } else {
+                response["status"] = "error";
+                response["message"] = "Incorrect password!";
+            }
+        } else {
             response["status"] = "error";
-            response["message"] = query.lastError().text();
+            response["message"] = "User not found!";
         }
     } else {
         response["status"] = "error";
-        response["message"] = query.lastError().text();
+        response["message"] = "Database query error: " + query.lastError().text();
     }
 
     QJsonDocument responseDoc(response);
-    clientSocket->write(responseDoc.toJson());
-    clientSocket->flush();
+    responseString = responseDoc.toJson();
+    try{
+        boost::asio::async_write(*socket, boost::asio::buffer(responseString),
+                                 [this,socket](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+                                     if (!ec) {
+                                         qDebug() << "Response sent successfully.";
+                                             // НЕ закривайте сокет одразу! Очікуйте нових запитів або обробляйте їх далі.
+                                         qDebug() << responseString;
+                                         async_accept();
+                                     } else {
+                                         qDebug() << "Error sending response: " << QString::fromStdString(ec.message());
+                                         socket->close();
+                                     }
+                                 }
+                                 );
+    }
+    catch(const std::exception& e) {
+        qDebug() << "Exception: " << e.what();
+    }
 }
 
-
-void Server::searchUser(QTcpSocket *clientSocket, const QJsonObject &request) {
+void Server::searchUser(std::shared_ptr<boost::asio::ip::tcp::socket> socket, const QJsonObject &request) {
     QString username = request["username"].toString();
     qDebug() << "Searching for user: " << username;  // Логування для дебагу
 
@@ -200,11 +252,28 @@ void Server::searchUser(QTcpSocket *clientSocket, const QJsonObject &request) {
     }
 
     QJsonDocument responseDoc(response);
-    clientSocket->write(responseDoc.toJson());
-    clientSocket->flush();
+    responseString = responseDoc.toJson();
+    try{
+        boost::asio::async_write(*socket, boost::asio::buffer(responseString),
+                                 [this,socket](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+                                     if (!ec) {
+                                         qDebug() << "Response sent successfully.";
+                                             // НЕ закривайте сокет одразу! Очікуйте нових запитів або обробляйте їх далі.
+                                         qDebug() << responseString;
+                                         async_accept();
+                                     } else {
+                                         qDebug() << "Error sending response: " << QString::fromStdString(ec.message());
+                                         socket->close();
+                                     }
+                                 }
+                                 );
+    }
+    catch(const std::exception& e) {
+        qDebug() << "Exception: " << e.what();
+    }
 }
 
-void Server::sendMessageToSomeone(QTcpSocket *clientSocket, const QJsonObject &request) {
+void Server::sendMessageToSomeone(std::shared_ptr<boost::asio::ip::tcp::socket> socket, const QJsonObject &request) {
     QString from = request["from"].toString();
     QString to = request["to"].toString();
     QString message = request["message"].toString();
@@ -218,7 +287,6 @@ void Server::sendMessageToSomeone(QTcpSocket *clientSocket, const QJsonObject &r
     query.bindValue(":tableName", TableExist);
     if(TableExist=="false"){
         if (!query.next()) {
-
             QString createTableQuery = QString(
                                            "CREATE TABLE [%1] ("
                                            "[id] INT IDENTITY(1,1) PRIMARY KEY,"
@@ -259,14 +327,31 @@ void Server::sendMessageToSomeone(QTcpSocket *clientSocket, const QJsonObject &r
     }
 
     QJsonDocument responseDoc(response);
-    clientSocket->write(responseDoc.toJson());
-    clientSocket->flush();
+    responseString = responseDoc.toJson();
+    try{
+        boost::asio::async_write(*socket, boost::asio::buffer(responseString),
+                                 [this,socket](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+                                     if (!ec) {
+                                         qDebug() << "Response sent successfully.";
+                                             // НЕ закривайте сокет одразу! Очікуйте нових запитів або обробляйте їх далі.
+                                         qDebug() << responseString;
+                                         async_accept();
+                                     } else {
+                                         qDebug() << "Error sending response: " << QString::fromStdString(ec.message());
+                                         socket->close();
+                                     }
+                                 }
+                                 );
+    }
+    catch(const std::exception& e) {
+        qDebug() << "Exception: " << e.what();
+    }
 }
 
-void Server::loadChat(QTcpSocket *clientSocket, const QJsonObject &request){
+void Server::loadChat(std::shared_ptr<boost::asio::ip::tcp::socket> socket, const QJsonObject &request){
+    carrentMessageId = 0;
     QString from = request["from"].toString();
     QString to = request["to"].toString();
-
     QString TableExist = checkTableDB(from,to);
 
     if(TableExist == "false"){
@@ -275,13 +360,13 @@ void Server::loadChat(QTcpSocket *clientSocket, const QJsonObject &request){
         response["message"] = "until don't exist caht";
 
         QJsonDocument responseDoc(response);
-        clientSocket->write(responseDoc.toJson());
-        clientSocket->flush();
-        return;
+
+        QString responseString = responseDoc.toJson();
+        boost::asio::async_write(*socket, boost::asio::buffer(responseString));
     }
 
     QSqlQuery query;
-    query.prepare("SELECT * FROM " + TableExist);
+    query.prepare("SELECT * FROM [dbo].[" + TableExist + +"]");
 
     if (!query.exec()) {
         qDebug() << "SQL error: " << query.lastError().text();
@@ -291,40 +376,61 @@ void Server::loadChat(QTcpSocket *clientSocket, const QJsonObject &request){
         response["message"] = "Database query failed.";
 
         QJsonDocument responseDoc(response);
-        clientSocket->write(responseDoc.toJson());
-        clientSocket->flush();
+
+        responseString = responseDoc.toJson();
+        try{
+            boost::asio::async_write(*socket, boost::asio::buffer(responseString),
+                                     [this,socket](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+                                         if (!ec) {
+                                             qDebug() << "Response sent successfully.";
+                                             qDebug() << responseString;
+                                             async_accept();
+                                         } else {
+                                             qDebug() << "Error sending response: " << QString::fromStdString(ec.message());
+                                             socket->close();
+                                         }
+                                     }
+                                     );
+        }
+        catch(const std::exception& e) {
+            qDebug() << "Exception: " << e.what();
+        }
         return;
     }
 
-    QJsonArray rows;
+    //SendLargeDataArray;
 
     while (query.next()) {
-        QJsonObject row;
+        //DataString;
         for (int i = 0; i < query.record().count(); ++i) {
-            row[query.record().fieldName(i)] = query.value(i).toString();
+            DataString[query.record().fieldName(i)] = query.value(i).toString();
+            if(query.record().fieldName(i) == "id") if (query.value(i).toInt() > carrentMessageId) carrentMessageId = query.value(i).toInt();
         }
-        rows.append(row);
+        DataString["status"] = "infoAboutChat";
+        QJsonDocument DataDoc(DataString);
+        chunk = DataDoc.toJson();
+
+        boost::asio::async_write(*socket, boost::asio::buffer(chunk),
+                                 [this,socket](const boost::system::error_code& ec, std::size_t) {
+                                     if (ec) {
+                                         qDebug() << "Error sending chunk: " << QString::fromStdString(ec.message());
+                                         socket->close();
+                                     } else {
+                                         qDebug() << "Chunk sent: " << chunk;
+                                     }
+                                 });
     }
+    qDebug() << "carrentMessageId" << carrentMessageId;
 
-    if (rows.isEmpty()) {
-        qDebug() << "No messages found in table: " << TableExist;
-    }
-
-    QJsonObject response;
-    response["status"] = "infoAboutChat";
-    response["data"] = rows;
-
-
-    QJsonDocument responseDoc(response);
-    clientSocket->write(responseDoc.toJson());
-    clientSocket->flush();
 }
 
-void Server::setToLoadAllChatsServer(QTcpSocket *clientSocket, const QJsonObject &request){
+void Server::setToLoadAllChatsServer(std::shared_ptr<boost::asio::ip::tcp::socket> socket, const QJsonObject &request){
+    qDebug() << "!!!!!!!!!!!!!!!!!!!!!!!!!!setToLoadAllChatsServer!!!!!!!!!!!!!!!!!!!";
     QSqlQuery query;
 
     QString current = request["current"].toString();
     QString search = request["search"].toString();
+
 
 
     QString currentQuery = QString("SELECT name FROM sys.tables WHERE name = '%1';").arg(current);
@@ -419,7 +525,9 @@ void Server::setToLoadAllChatsServer(QTcpSocket *clientSocket, const QJsonObject
         qDebug() << "insert good!";
     }
 }
-void Server::loadAllChats(QTcpSocket *clientSocket, const QJsonObject &request){
+
+void Server::loadAllChats(std::shared_ptr<boost::asio::ip::tcp::socket> socket, const QJsonObject &request){
+    qDebug() << "loadAllChats";
     QSqlQuery query;
     QString current = request["current"].toString();
 
@@ -460,18 +568,38 @@ void Server::loadAllChats(QTcpSocket *clientSocket, const QJsonObject &request){
     response["status"] = "loadAllChats";
     response["currentChats"] = rows;
 
-     qDebug() << "Sending response to client:" << response["currentChats"];
+     qDebug() << "Sending response to client:" << response["currentChats"].toString();
 
     QJsonDocument responseDoc(response);
-    clientSocket->write(responseDoc.toJson());
-    clientSocket->flush();
 
+    responseString = responseDoc.toJson();
+    try{
+        boost::asio::async_write(*socket, boost::asio::buffer(responseString),
+                                 [this,socket](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+                                     if (!ec) {
+                                         qDebug() << "Response sent successfully.";
+                                             // НЕ закривайте сокет одразу! Очікуйте нових запитів або обробляйте їх далі.
+                                         qDebug() << responseString;
+                                         async_accept();
+                                     } else {
+                                         qDebug() << "Error sending response: " << QString::fromStdString(ec.message());
+                                         socket->close();
+                                     }
+                                 }
+                                 );
+    }
+    catch(const std::exception& e) {
+        qDebug() << "Exception: " << e.what();
+    }
 }
 
-void Server::loadNewMessages(QTcpSocket *clientSocket, const QJsonObject &request) {
+void Server::loadNewMessages(std::shared_ptr<boost::asio::ip::tcp::socket> socket, const QJsonObject &request) {
+    qDebug() << "loadNewMessages";
     QString from = request["from"].toString();
     QString to = request["to"].toString();
-    int lastMessageId = request["lastMessageId"].toInt();
+    int maxIdMessage = request["lastMessageId"].toInt();
+    qDebug() << "======================"<<maxIdMessage<<"===========FOR:"<<from<<"========";
+
 
     QString TableExist = checkTableDB(from, to);
     qDebug() << "Table name from checkTableDB:" << TableExist;
@@ -486,46 +614,74 @@ void Server::loadNewMessages(QTcpSocket *clientSocket, const QJsonObject &reques
                                "SELECT id, [from], [to], [message], [timestamp] "
                                "FROM [%1] "
                                "WHERE (([from] = :from AND [to] = :to) OR ([from] = :to AND [to] = :from)) "
-                               "AND id > :lastMessageId "
+                               "AND id > :maxIdMessage "
                                "ORDER BY [timestamp] ASC;").arg(TableExist);
-
-    qDebug() << "Generated Query: " << currentQuery;
 
     query.prepare(currentQuery);
     query.bindValue(":from", from);
     query.bindValue(":to", to);
-    query.bindValue(":lastMessageId", lastMessageId);
-
+    query.bindValue(":maxIdMessage", maxIdMessage);
+    carrentMessageId = maxIdMessage;
     if (!query.exec()) {
         qDebug() << "Error loading new messages:" << query.lastError().text();
         return;
     }
-
-    QJsonArray messagesArray;
     while (query.next()) {
-        QJsonObject messageObject;
-        messageObject["id"] = query.value("id").toInt();
-        messageObject["from"] = query.value("from").toString();
-        messageObject["to"] = query.value("to").toString();
-        messageObject["message"] = query.value("message").toString();
-        messageObject["timestamp"] = query.value("timestamp").toString();
+        //DataString;
+        for (int i = 0; i < query.record().count(); ++i) {
+            DataString[query.record().fieldName(i)] = query.value(i).toString();
+            if(query.record().fieldName(i) == "id") if (query.value(i).toInt() > carrentMessageId) carrentMessageId = query.value(i).toInt();
+        }
+        DataString["status"] = "newMessages";
 
-        messagesArray.append(messageObject);
+        QJsonDocument DataDoc(DataString);
+        chunk = DataDoc.toJson();
+
+        boost::asio::async_write(*socket, boost::asio::buffer(chunk),
+                                 [this,socket,query](const boost::system::error_code& ec, std::size_t) {
+                                     if (ec) {
+                                         qDebug() << "Error sending chunk: " << QString::fromStdString(ec.message());
+                                         socket->close();
+                                     } else {
+                                         //lastMessageId = query.value("id").toInt();
+
+                                         qDebug() << "Chunk sent: " << chunk;
+
+                                     }
+                                 });
     }
-
-    QJsonObject response;
-    response["status"] = "newMessages";
-    response["messages"] = messagesArray;
-
-    qDebug() << "Sending new messages response to client:" << response["messages"];
-
-    QJsonDocument responseDoc(response);
-    clientSocket->write(responseDoc.toJson());
-    clientSocket->flush();
-
-
 }
 
+void Server::async_accept(){
+    auto socket = std::make_shared<boost::asio::ip::tcp::socket>(io_context);
+    qDebug() << "wait async_accept";
+    qDebug() << acceptor.is_open();
+    acceptor.async_accept(
+        *socket,
+        [this, socket](const boost::system::error_code& ec){
+            if(ec){
+                qDebug() << "Помилка прийому з'єднання: " << ec.message();
+                return;
+            }else{
+                qDebug() << "Connect successful";
+                auto data = std::make_shared<std::array<char, 1024>>();
+                auto client_socket = socket;
+                socket->async_read_some(
+                    boost::asio::buffer(*data),
+                    [this,client_socket,data](boost::system::error_code ec, std::size_t length) {
+                        if (ec) {
+                            qDebug() << "Error get data: " << ec.message();
+                            return;
+                        }
+                        qDebug() << "data received: " << QString::fromStdString(std::string(data->data(), length));
+                        QString strData(data->data());
+                        ReadyRead(client_socket,strData);
+                    });
+            }
+            async_accept();
+        }
+    );
+}
 
 QString Server::checkTableDB(QString from, QString to){
     QSqlQuery query;
@@ -542,6 +698,7 @@ QString Server::checkTableDB(QString from, QString to){
     qDebug() << table2;
     query.bindValue(":tableName", table2);
     if (query.exec() && query.next() && query.value(0).toInt() > 0) {
+
         return table2;
     }
 
