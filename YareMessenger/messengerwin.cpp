@@ -12,9 +12,8 @@ messengerWin::messengerWin(const QString &username,boost::asio::io_context& cont
 {
     ui->setupUi(this);
     {
-        this->setStyleSheet("background-color:#ccdfda;");
+        this->setStyleSheet("background-color:#888888;");
         this->setFixedSize(850,525);
-
 
         centralWidget = new QWidget(this);
         centralWidget->setFixedSize(850,525);
@@ -34,24 +33,24 @@ messengerWin::messengerWin(const QString &username,boost::asio::io_context& cont
 
         upperLayoutLabel = new QLabel(own,this);
         upperLayoutLabel->setStyleSheet("padding:5px;"
-                                    "background-color:#809f96;"
-                                     "color:white;"
-                                    "font-weight: bold;"
-                                      "font-size:15px;");
+                                        "background-color:#dcdcdc;"
+                                        "color:white;"
+                                        "font-weight: bold;"
+                                        "font-size:15px;");
         logOutLabelLayout->addWidget(upperLayoutLabel);
 
         logOut = new QPushButton("Log out");
         logOut->setCursor(Qt::PointingHandCursor);
         logOut->setObjectName("logOut");
         logOut->setStyleSheet("#logOut{"
-                                "max-width:60px;"
-                                "min-height:25px;"
-                                "background-color:#375249;"
-                                "color:white;"
-                                "}"
+                              "max-width:60px;"
+                              "min-height:25px;"
+                              "background-color:#d8d8d8;"
+                              "color:white;"
+                              "}"
                               "#logOut:hover{"
-                                "background-color:#809f96;"
-                                "}");
+                              "background-color:#e3e3e3;"
+                              "}");
         logOutLabelLayout->addWidget(logOut);
 
         layoutUpperWidget->addLayout(logOutLabelLayout);
@@ -60,15 +59,25 @@ messengerWin::messengerWin(const QString &username,boost::asio::io_context& cont
 
         layoutSearch = new QVBoxLayout(this);
         search = new QLineEdit(this);
-        search->setStyleSheet("min-width:200px;"
+
+
+        search->setStyleSheet("QLineEdit{"
+                              "min-width:200px;"
                               "min-height:25px;"
                               "font-size:15px;"
                               "padding:0;"
                               "margin:0;"
                               "color: #375249;"
-                              "background-color:#d7e6e1;"
+                              "background-color:#cacaca;"
                               "border-radius:1px;"
-                              "border:1px solid white;");
+                              "border:1px solid white;"
+                              "}"
+                              "QLineEdit:focus{"
+                              "background-color:#e3e3e3"
+                              "}");
+
+
+
         search->setPlaceholderText("Start with '@'");
 
         startSearch = new QPushButton("Search");
@@ -80,13 +89,13 @@ messengerWin::messengerWin(const QString &username,boost::asio::io_context& cont
                                    "font-size:15px;"
                                    "padding:0;"
                                    "margin:3px 10px 0px 10px;"
-                                   "background-color:#b8d3cb;"
+                                   "background-color:#d8d8d8;"
                                    "color:#5b786f;"
                                    "border-radius:3px;"
                                    "border:1px solid white;"
                                    "}"
                                    "#startSearch:hover{"
-                                   "background-color:#375249;"
+                                   "background-color:#b4b4b4;"
                                    "color:#e1ece9;"
                                    "}");
         startSearch->setCursor(Qt::PointingHandCursor);
@@ -97,13 +106,13 @@ messengerWin::messengerWin(const QString &username,boost::asio::io_context& cont
                                    "font-size:15px;"
                                    "padding:3px;"
                                    "margin:0;"
-                                   "background-color:#375249;"
-                                   "color: #a4c6bc;");
+                                   "background-color:#b4b4b4;"
+                                   "color: white;");
         stateAction->setAlignment(Qt::AlignCenter);
 
 
         chatsWidget = new QWidget(this);
-        chatsWidget->setStyleSheet("background-color:#243e35;");
+        chatsWidget->setStyleSheet("background-color:#d1d1d1;");
         chatsWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
         chatsWidgetLayout = new QVBoxLayout(chatsWidget);
@@ -113,7 +122,7 @@ messengerWin::messengerWin(const QString &username,boost::asio::io_context& cont
 
         chatsWidgetContainer = new QWidget();
         chatsWidgetContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-        chatsWidgetContainer->setStyleSheet("background-color:#6d8c82;");
+        chatsWidgetContainer->setStyleSheet("background-color:#d1d1d1;");
 
         chatsWidgetLabelLayout = new QVBoxLayout(chatsWidgetContainer);
         chatsWidgetLabelLayout->setAlignment(Qt::AlignTop);
@@ -121,11 +130,11 @@ messengerWin::messengerWin(const QString &username,boost::asio::io_context& cont
         chatsWidgetLabel = new QLabel(chatsWidgetContainer);
         chatsWidgetLabel->setAlignment(Qt::AlignCenter);
         chatsWidgetLabelLayout->addWidget(chatsWidgetLabel);
-        chatsWidgetLabel->setStyleSheet("background-color:#6d8c82;");
+        chatsWidgetLabel->setStyleSheet("background-color:#d1d1d1;");
 
         chatsSearchContainer = new QWidget();
         chatsSearchContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-        chatsSearchContainer->setStyleSheet("background-color:#809f96;");
+        chatsSearchContainer->setStyleSheet("background-color:#888888;");
 
         chatsSearchLabelLayout = new QVBoxLayout(chatsSearchContainer);
         chatsSearchLabelLayout->setAlignment(Qt::AlignTop);
@@ -133,7 +142,7 @@ messengerWin::messengerWin(const QString &username,boost::asio::io_context& cont
         chatsSearchLabel = new QLabel(chatsSearchContainer);
         chatsSearchLabel->setAlignment(Qt::AlignCenter);
         chatsSearchLabelLayout->addWidget(chatsSearchLabel);
-        chatsSearchLabel->setStyleSheet("background-color:#809f96;");
+        chatsSearchLabel->setStyleSheet("background-color:#888888;");
 
 
         stackedActionWidget = new QStackedWidget(chatsWidget);
@@ -158,7 +167,7 @@ messengerWin::messengerWin(const QString &username,boost::asio::io_context& cont
 
 
         centerLabel = new QLabel("Select the chat to start",stackedWidget);
-        centerLabel->setStyleSheet("font-size:25px; color:#5b786f; background-color:#ccdfda;");
+        centerLabel->setStyleSheet("font-size:25px; color:#c1c1c1; background-color:#888888;");
         centerLabel->setAlignment(Qt::AlignCenter);
 
         stackedWidget->addWidget(centerLabel);
@@ -225,6 +234,7 @@ messengerWin::messengerWin(const QString &username,boost::asio::io_context& cont
         }, Qt::QueuedConnection);
     });
 }
+
 
 void messengerWin::insertMessageToChat(QString from, QString to, QString message, QVector<int> date, QString messageId) {
     qDebug() << "insertMessageToChat";
@@ -295,14 +305,14 @@ void messengerWin::createChatButton(QString name, bool isSearchUser) {
         "    font-size: 15px;"
         "    padding: 0 0 0 10px;"
         "    margin: 0 10px 0 10px;"
-        "    background-color: #122b22;"
+        "    background-color: #929292;"
         "    text-align: left;"
-        "    color: #a4c6bc;"
+        "    color: white;"
         "    border-radius: 5px;"
         "}"
         "#chatButton:hover {"
-        "    background-color: #49655c;"
-        "    color: #e1ece9;"
+        "    background-color: #b9b9b9;"
+        "    color: white;"
         "}"
         );
     chatButton->setText(name);
@@ -341,7 +351,7 @@ void messengerWin::createChatButton(QString name, bool isSearchUser) {
                 qCritical() << "can't create chatwindow!";
                 return;
             }
-            chatwindow->setStyleSheet("background-color:#243e35;");
+            chatwindow->setStyleSheet("background-color:#888888;");
 
             upperNameLabel->setText(name);
             upperNameLabel->setStyleSheet(
@@ -357,10 +367,10 @@ void messengerWin::createChatButton(QString name, bool isSearchUser) {
 
             scrollArea = new QScrollArea(chatwindow);
             scrollArea->setWidgetResizable(true);
-            scrollArea->setStyleSheet("background-color:#a4c6bc;border-radius:10px;");
+            scrollArea->setStyleSheet("background-color:#888888;border-radius:10px;");
 
             scrollWidget = new QWidget();
-            scrollWidget->setStyleSheet("background-color:#a4c6bc;border-radius:10px;");
+            scrollWidget->setStyleSheet("background-color:#888888;border-radius:10px;");
             chatLayout = new QVBoxLayout(scrollWidget);
             chatLayout->setAlignment(Qt::AlignBottom | Qt::AlignLeft);
             scrollArea->setWidget(scrollWidget);
