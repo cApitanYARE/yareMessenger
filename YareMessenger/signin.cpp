@@ -11,8 +11,9 @@ SignIn::SignIn(QWidget *parent, boost::asio::io_context& context)
 {
     ui->setupUi(this);
 
-    this->setStyleSheet("background-color:#dcdcdc;");
-    this->setFixedSize(300,345);
+    this->setStyleSheet("background-color:#dcdcdc;"
+                        "border-radius:10px;");
+    this->setFixedSize(300,325);
 
     Vlayout = new QVBoxLayout(this);
     Vlayout->setContentsMargins(0, 0, 0, 0);
@@ -28,6 +29,7 @@ SignIn::SignIn(QWidget *parent, boost::asio::io_context& context)
                             "color:#5d5b5a;"
                             "border-radius:1px;"
                             "margin-top:10px;"
+                            "margin-bottom:30px;"
                             "}"
                             //////////////////////////////////////
                             "#EnterLine{"
@@ -39,6 +41,25 @@ SignIn::SignIn(QWidget *parent, boost::asio::io_context& context)
                             "border-radius:1px;"
                             "margin:10px 10px;"
                             "}"
+
+                            "#EnterLine:focus{"
+                            "background-color:#e3e3e3;"
+                            "color:red;"
+                            "}"
+                            ///////////////////////////////////////
+                            "#EnterPass{"
+                            "background-color:#cacaca;"
+                            "min-height:25px;"
+                            "max-height:25px;"
+                            "font-size:18px;"
+                            "color:#5d5b5a;"
+                            "border-radius:1px;"
+                            "margin:20px 10px 0px 10px;"
+                            "}"
+                            "#EnterPass:focus{"
+                            "background-color:#e3e3e3;"
+                            "color:red;"
+                            "}"
                             ///////////////////////////////////////
                             "#SendData{"
                             "background-color:#929292;"
@@ -47,7 +68,6 @@ SignIn::SignIn(QWidget *parent, boost::asio::io_context& context)
                             "padding:5px;"
                             "border: 1px solid #5d5b5a;"
                             "border-radius:3px;"
-                            "margin-top:20px;"
                             "}"
 
                             "#SendData:hover{"
@@ -62,22 +82,23 @@ SignIn::SignIn(QWidget *parent, boost::asio::io_context& context)
                             "min-height:25px;"
                             "border: 1px solid #77a7ff;"
                             "border-radius:6px;"
-                            "margin:0px 10px;"
+                            "margin:5px 10px;"
                             "}"
                             ///////////////////////////////////////
                             "#btnClose{"
-                            "background-color:#ff6b6b;"
-                            "color:white;"
+                            "background-color:#ff8f8f;"
+                            "color:#525252;"
                             "margin:0;"
                             "padding:0;"
                             "min-width:300px;"
                             "min-height:20px;"
-                            "border: none;"
+                            "border:none;"
                             "font-weight:bold;"
                             "letter-spacing:5px;"
                             "}"
                             "#btnClose:hover{"
                             "background-color:#ff4747;"
+                            "color:white;"
                             "}"
                             );
     }
@@ -90,13 +111,13 @@ SignIn::SignIn(QWidget *parent, boost::asio::io_context& context)
     enter_signIn = new QLineEdit();
     enter_signIn->setObjectName("EnterLine");
     enter_signIn->setPlaceholderText("enter name, first write @");
-
+/*
     password = new QLabel("Password");
     password->setObjectName("Title");
     password->setAlignment(Qt::AlignHCenter);
-
+*/
     enter_pass = new QLineEdit();
-    enter_pass->setObjectName("EnterLine");
+    enter_pass->setObjectName("EnterPass");
     enter_pass->setPlaceholderText("enter password");
 
     confirm_pass = new QLineEdit();
@@ -120,7 +141,7 @@ SignIn::SignIn(QWidget *parent, boost::asio::io_context& context)
     Vlayout->addWidget(closeWindow);
     Vlayout->addWidget(signIn);
     Vlayout->addWidget(enter_signIn);
-    Vlayout->addWidget(password);
+    //Vlayout->addWidget(password);
     Vlayout->addWidget(enter_pass);
     Vlayout->addWidget(confirm_pass);
     Vlayout->addWidget(info);
@@ -135,6 +156,7 @@ SignIn::SignIn(QWidget *parent, boost::asio::io_context& context)
 
     connect(closeWindow, &QPushButton::clicked, this, [this] {
         this->close();
+        std::exit(0);
     });
     connect(changeField, &QPushButton::clicked, this, [this,&context] {
         this->close();

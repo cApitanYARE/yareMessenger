@@ -43,6 +43,16 @@ LogIn::LogIn(boost::asio::io_context& context,QWidget *parent)
                             "font-size:18px;"
                             "color:#5d5b5a;"
                             "border-radius:1px;"
+                            "margin:20px 10px;"
+                            "}"
+                            ///////////////////////////////////////
+                            "#EnterPass{"
+                            "background-color:#cacaca;"
+                            "min-height:25px;"
+                            "max-height:25px;"
+                            "font-size:18px;"
+                            "color:#5d5b5a;"
+                            "border-radius:1px;"
                             "margin:0px 10px;"
                             "}"
                             ///////////////////////////////////////
@@ -53,7 +63,7 @@ LogIn::LogIn(boost::asio::io_context& context,QWidget *parent)
                             "padding:5px;"
                             "border: 1px solid #5d5b5a;"
                             "border-radius:3px;"
-                            "margin-top:20px;"
+                            "margin-top:10px;"
                             "}"
 
                             "#SendData:hover{"
@@ -72,18 +82,19 @@ LogIn::LogIn(boost::asio::io_context& context,QWidget *parent)
                             "}"
                             ///////////////////////////////////////
                             "#btnClose{"
-                            "background-color:#ff6b6b;"
-                            "color:white;"
+                            "background-color:#ff8f8f;"
+                            "color:#525252;"
                             "margin:0;"
                             "padding:0;"
                             "min-width:300px;"
                             "min-height:20px;"
-                            "border: none;"
+                            "border:none;"
                             "font-weight:bold;"
                             "letter-spacing:5px;"
                             "}"
                             "#btnClose:hover{"
                             "background-color:#ff4747;"
+                            "color:white;"
                             "}"
                             );
     }
@@ -97,12 +108,11 @@ LogIn::LogIn(boost::asio::io_context& context,QWidget *parent)
     enter_log->setObjectName("EnterLine");
     enter_log->setPlaceholderText("enter name, first write @");
 
-    password = new QLabel("Password");
-    password->setObjectName("Title");
-    password->setAlignment(Qt::AlignHCenter);
+    //password->setObjectName("Title");
+    //password->setAlignment(Qt::AlignHCenter);
 
     enter_pass = new QLineEdit();
-    enter_pass->setObjectName("EnterLine");
+    enter_pass->setObjectName("EnterPass");
     enter_pass->setPlaceholderText("enter password");
 
     sendData = new QPushButton("Confirm");
@@ -123,7 +133,7 @@ LogIn::LogIn(boost::asio::io_context& context,QWidget *parent)
     Vlayout->addWidget(closeWindow);
     Vlayout->addWidget(login);
     Vlayout->addWidget(enter_log);
-    Vlayout->addWidget(password);
+    //Vlayout->addWidget(password);
     Vlayout->addWidget(enter_pass);
     Vlayout->addWidget(info);
     Vlayout->addWidget(sendData);
@@ -135,9 +145,11 @@ LogIn::LogIn(boost::asio::io_context& context,QWidget *parent)
     }
     connect(closeWindow, &QPushButton::clicked, this, [this] {
         this->close();
+        std::exit(0);
     });
     connect(changeField, &QPushButton::clicked, this, [this,&context] {
         this->close();
+
         SignIn* sigUpWindow = new SignIn(nullptr,context);
         sigUpWindow->setWindowFlag(Qt::FramelessWindowHint);
         sigUpWindow->show();
