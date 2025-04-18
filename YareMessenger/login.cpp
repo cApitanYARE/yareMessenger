@@ -45,6 +45,10 @@ LogIn::LogIn(boost::asio::io_context& context,QWidget *parent)
                             "border-radius:1px;"
                             "margin:20px 10px;"
                             "}"
+                            "#EnterLine:focus{"
+                            "background-color:#e3e3e3;"
+                            "color:red;"
+                            "}"
                             ///////////////////////////////////////
                             "#EnterPass{"
                             "background-color:#cacaca;"
@@ -54,6 +58,10 @@ LogIn::LogIn(boost::asio::io_context& context,QWidget *parent)
                             "color:#5d5b5a;"
                             "border-radius:1px;"
                             "margin:0px 10px;"
+                            "}"
+                            "#EnterPass:focus{"
+                            "background-color:#e3e3e3;"
+                            "color:red;"
                             "}"
                             ///////////////////////////////////////
                             "#SendData{"
